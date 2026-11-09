@@ -18,6 +18,14 @@ class MacaroonUnmetCaveatException(MacaroonVerificationFailedException):
     pass
 
 
+class MacaroonAmbiguousDischargeException(MacaroonUnmetCaveatException):
+    pass
+
+
+class MacaroonCyclicCaveatException(MacaroonUnmetCaveatException):
+    pass
+
+
 class MacaroonSerializationException(MacaroonException):
     pass
 

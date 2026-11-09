@@ -31,7 +31,19 @@ class BaseThirdPartyCaveatVerifierDelegate(object):
                                   caveat,
                                   root,
                                   macaroon,
-                                  signature):
+                                  signature,
+                                  context=None):
+        """Verify a third-party caveat.
+
+        Compatibility boundary: Verifier always passes a per-verification
+        VerificationContext as the context keyword argument. Custom
+        verifier delegates must accept it (or **kwargs) and forward it to
+        any nested verifier.verify_discharge(...) call so that discharge
+        resolution, cycle detection and deduplication stay scoped to a
+        single verification run. The context is scratch space for the
+        current run only; verifier configuration and macaroons must not
+        be mutated.
+        """
         pass
 
     @abstractmethod

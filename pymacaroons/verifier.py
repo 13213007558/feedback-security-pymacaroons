@@ -18,6 +18,7 @@ from pymacaroons.utils import (
     generate_derived_key,
     hmac_digest
 )
+from pymacaroons.verification_context import VerificationContext
 
 
 class Verifier(object):
@@ -48,21 +49,26 @@ class Verifier(object):
     def verify_exact(self, predicate):
         return predicate in self.predicates
 
-    def verify(self, macaroon, key):
+    def verify(self, macaroon, key, context=None):
         key = generate_derived_key(convert_to_bytes(key))
+        if context is None:
+            context = VerificationContext(macaroon)
         return self.verify_discharge(
             macaroon,
             macaroon,
             key,
+            context=context,
         )
 
-    def verify_discharge(self, root, discharge, key):
+    def verify_discharge(self, root, discharge, key, context=None):
+        if context is None:
+            context = VerificationContext(root)
         calculated_signature = hmac_digest(
             key, discharge.identifier_bytes
         )
 
         calculated_signature = self._verify_caveats(
-            root, discharge, calculated_signature
+            root, discharge, calculated_signature, context
         )
 
         if root != discharge:
@@ -79,16 +85,17 @@ class Verifier(object):
 
         return True
 
-    def _verify_caveats(self, root, macaroon, signature):
+    def _verify_caveats(self, root, macaroon, signature, context):
         for caveat in macaroon.caveats:
             if self._caveat_met(root,
                                 caveat,
                                 macaroon,
-                                signature):
+                                signature,
+                                context):
                 signature = self._update_signature(caveat, signature)
         return signature
 
-    def _caveat_met(self, root, caveat, macaroon, signature):
+    def _caveat_met(self, root, caveat, macaroon, signature, context):
         if caveat.first_party():
             return (
                 self
@@ -101,6 +108,7 @@ class Verifier(object):
                 .third_party_caveat_verifier_delegate
                 .verify_third_party_caveat(
                     self, caveat, root, macaroon, signature,
+                    context=context,
                 )
             )
 

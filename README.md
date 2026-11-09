@@ -98,6 +98,34 @@ verified = v.verify(
 # all caveats were met
 ```
 
+### Reusing a Verifier
+
+A `Verifier` can be shared and reused (e.g. as a singleton in a backend
+service). Its configuration — exact predicates, general callbacks and the
+discharge macaroons held by its third-party delegate — is treated as
+read-only during verification, and the macaroons passed to `verify()` are
+never mutated. Every `verify()` call runs against a fresh
+`VerificationContext` that carries the per-run state: which discharges
+have been resolved for which identifier (identical duplicates are
+deduplicated, conflicting candidates for one identifier raise
+`MacaroonAmbiguousDischargeException`) and the chain of discharges
+currently being verified (re-entering one raises
+`MacaroonCyclicCaveatException`). Nothing is consumed or rolled back, so
+success, signature errors, unmet caveats and exceptions raised by your own
+callbacks all leave the verifier ready for the next call, and concurrent
+`verify()` calls do not interfere — provided the configuration itself is
+not modified while a verification is in flight.
+
+See `examples/verifier_reuse.py` for a runnable example.
+
+**Custom verifier delegates:** `Verifier` now passes the per-run context
+to `verify_third_party_caveat(...)` as a `context` keyword argument.
+Custom `BaseThirdPartyCaveatVerifierDelegate` implementations must accept
+it (or `**kwargs`) and forward it to nested `verify_discharge()` calls;
+the same applies to direct calls of `Verifier.verify_discharge()`, which
+accepts an optional `context` argument and creates a fresh one when
+omitted.
+
 ## Documentation
 
 The latest documentation can always be found on [ReadTheDocs](http://pymacaroons.readthedocs.org/en/latest/).
@@ -133,4 +161,3 @@ PyMacaroons, libmacaroons, and Ruby-Macaroons all use the same underlying crypto
 - [libmacaroons](https://github.com/rescrv/libmacaroons)
 - [Ruby-Macaroons](https://github.com/localmed/ruby-macaroons)
 - [libnacl](https://github.com/saltstack/libnacl)
-

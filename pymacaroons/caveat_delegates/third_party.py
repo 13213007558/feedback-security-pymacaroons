@@ -11,6 +11,7 @@ from pymacaroons.utils import (
     sign_third_party_caveat,
 )
 from pymacaroons.exceptions import MacaroonUnmetCaveatException
+from pymacaroons.verification_context import VerificationContext
 from .base_third_party import (
     BaseThirdPartyCaveatDelegate,
     BaseThirdPartyCaveatVerifierDelegate,
@@ -56,35 +57,30 @@ class ThirdPartyCaveatVerifierDelegate(BaseThirdPartyCaveatVerifierDelegate):
 
     def __init__(self, discharge_macaroons=None, *args, **kwargs):
         super(ThirdPartyCaveatVerifierDelegate, self).__init__(*args, **kwargs)
-        if discharge_macaroons:
-            self.discharge_macaroons = {
-                m.identifier_bytes: m for m in discharge_macaroons
-            }
+        # Shared, read-only configuration. Discharges are never consumed
+        # or removed during verification; per-run state lives in the
+        # VerificationContext passed to verify_third_party_caveat().
+        self.discharge_macaroons = list(discharge_macaroons or [])
 
     def verify_third_party_caveat(self,
                                   verifier,
                                   caveat,
                                   root,
                                   macaroon,
-                                  signature):
-        caveat_macaroon = self._caveat_macaroon(caveat)
+                                  signature,
+                                  context=None):
+        if context is None:
+            context = VerificationContext(root)
+        caveat_macaroon = self._caveat_macaroon(caveat, context)
         caveat_key = self._extract_caveat_key(signature, caveat)
 
-        discharge = self.discharge_macaroons[caveat.caveat_id_bytes]
-        del self.discharge_macaroons[caveat.caveat_id_bytes]
-
-        caveat_met = verifier.verify_discharge(
-            root,
-            caveat_macaroon,
-            caveat_key,
-        )
-
-        # if the caveat wasn't successfully discharged,
-        # restore the discharge macaroon to the available set
-        if not caveat_met:
-            self.discharge_macaroons[caveat.caveat_id_bytes] = discharge
-
-        return caveat_met
+        with context.discharging(caveat.caveat_id_bytes):
+            return verifier.verify_discharge(
+                root,
+                caveat_macaroon,
+                caveat_key,
+                context=context,
+            )
 
     def update_signature(self, signature, caveat):
         return binascii.unhexlify(
@@ -95,9 +91,11 @@ class ThirdPartyCaveatVerifierDelegate(BaseThirdPartyCaveatVerifierDelegate):
             )
         )
 
-    def _caveat_macaroon(self, caveat):
-        caveat_macaroon = self.discharge_macaroons.get(
-            caveat.caveat_id_bytes, None)
+    def _caveat_macaroon(self, caveat, context):
+        caveat_macaroon = context.resolve_discharge(
+            caveat.caveat_id_bytes,
+            self._configured_discharges(),
+        )
 
         if not caveat_macaroon:
             raise MacaroonUnmetCaveatException(
@@ -106,6 +104,13 @@ class ThirdPartyCaveatVerifierDelegate(BaseThirdPartyCaveatVerifierDelegate):
             )
 
         return caveat_macaroon
+
+    def _configured_discharges(self):
+        configured = self.discharge_macaroons
+        if isinstance(configured, dict):
+            # Tolerate the pre-context dict layout if assigned directly.
+            return list(configured.values())
+        return configured
 
     def _extract_caveat_key(self, signature, caveat):
         key = truncate_or_pad(signature)
